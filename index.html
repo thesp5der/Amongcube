@@ -22,6 +22,8 @@ canvas{display:block;width:100%;height:100%}
 #menu svg{width:clamp(110px,32vw,170px);height:auto}
 #start,#restart,#host,#join,#jgo,#lleave,#lstart{font-family:'Amatic SC',cursive;font-weight:700;font-size:48px;color:#fff;background:#c51111;border:3px solid #fff;border-radius:14px;padding:6px 44px;cursor:pointer}
 #restart{margin-top:18px;font-size:36px}
+#menu,#lobby{opacity:0;pointer-events:none}
+body.ui #stick,body.ui #sprint,body.ui #pause,body.ui #cross,body.ui #hud{display:none!important}
 #host,#join,#jgo,#lleave,#lstart{font-size:36px;padding:4px 30px}
 .row{display:flex;gap:14px}
 #lt{margin:0;font-size:clamp(24px,7vw,40px);letter-spacing:4px}
@@ -196,7 +198,7 @@ function connect(first){
   };
 }
 L('host').onclick=()=>connect({t:'host'});
-L('join').onclick=()=>{lobby('JOIN A ROOM','','',true);L('jin').value='';L('jin').focus();};
+L('join').onclick=()=>{lobby('JOIN A ROOM','','',true);L('jin').value='';};
 L('jgo').onclick=()=>{
   const c=L('jin').value.toUpperCase().replace(/[^A-Z]/g,'');
   if(c.length!==4)return lobby('JOIN A ROOM','','Enter the 4-letter room code',true,true);
@@ -206,6 +208,91 @@ L('jgo').onclick=()=>{
 L('lleave').onclick=()=>{leave();toMenu();};
 L('lstart').onclick=()=>newRound();
 // ---- end lobby ----
+// ---- 3D UI: a skin over the hidden DOM menu/lobby (the DOM stays the source of truth; 3D buttons click it) ----
+const uiScene=new THREE.Scene(),uiCam=new THREE.PerspectiveCamera(50,1,.1,100),uiRoot=new THREE.Group(),uray=new THREE.Raycaster();
+uiScene.background=new THREE.Color(0x0b1020);
+const uiSun=new THREE.DirectionalLight(0xffffff,.9);uiSun.position.set(3,6,8);
+uiScene.add(new THREE.AmbientLight(0xffffff,.8),uiSun,uiRoot);
+function uiFit(){ // fit an 8 x 14 unit layout to any screen
+  const t=Math.tan(25*Math.PI/180);uiCam.aspect=innerWidth/innerHeight;
+  uiCam.position.set(0,0,Math.max(14/(2*t),8/(2*t*uiCam.aspect)));uiCam.updateProjectionMatrix();
+}
+addEventListener('resize',uiFit);uiFit();
+const uiUp=()=>menu.style.display!=='none'||L('lobby').style.display!=='none';
+let uiHits=[],uiSpin=[],uiSway=[],uiKey='';
+const mats={},boxes={},UNIT=new THREE.BoxGeometry(.92,.92,1),G={};
+const mat=c=>mats[c]||(mats[c]=new THREE.MeshLambertMaterial({color:c}));
+const box=(w,h,d)=>boxes[[w,h,d]]||(boxes[[w,h,d]]=new THREE.BoxGeometry(w,h,d));
+// 5x7 voxel font: every lit pixel is a real cube
+'A 01110 10001 10001 11111 10001 10001 10001|B 11110 10001 10001 11110 10001 10001 11110|C 01110 10001 10000 10000 10000 10001 01110|D 11110 10001 10001 10001 10001 10001 11110|E 11111 10000 10000 11110 10000 10000 11111|F 11111 10000 10000 11110 10000 10000 10000|G 01110 10001 10000 10111 10001 10001 01111|H 10001 10001 10001 11111 10001 10001 10001|I 01110 00100 00100 00100 00100 00100 01110|J 00111 00010 00010 00010 00010 10010 01100|K 10001 10010 10100 11000 10100 10010 10001|L 10000 10000 10000 10000 10000 10000 11111|M 10001 11011 10101 10101 10001 10001 10001|N 10001 11001 10101 10011 10001 10001 10001|O 01110 10001 10001 10001 10001 10001 01110|P 11110 10001 10001 11110 10000 10000 10000|Q 01110 10001 10001 10001 10101 10010 01101|R 11110 10001 10001 11110 10100 10010 10001|S 01111 10000 10000 01110 00001 00001 11110|T 11111 00100 00100 00100 00100 00100 00100|U 10001 10001 10001 10001 10001 10001 01110|V 10001 10001 10001 10001 10001 01010 00100|W 10001 10001 10001 10101 10101 11011 10001|X 10001 10001 01010 00100 01010 10001 10001|Y 10001 10001 01010 00100 00100 00100 00100|Z 11111 00001 00010 00100 01000 10000 11111|0 01110 10001 10011 10101 11001 10001 01110|1 00100 01100 00100 00100 00100 00100 01110|2 01110 10001 00001 00010 00100 01000 11111|3 11110 00001 00001 01110 00001 00001 11110|4 00010 00110 01010 10010 11111 00010 00010|5 11111 10000 11110 00001 00001 10001 01110|6 00110 01000 10000 11110 10001 10001 01110|7 11111 00001 00010 00100 01000 01000 01000|8 01110 10001 10001 01110 10001 10001 01110|9 01110 10001 10001 01111 00001 00010 01100|? 01110 10001 00001 00110 00100 00000 00100|! 00100 00100 00100 00100 00100 00000 00100|. 00000 00000 00000 00000 00000 01100 01100|: 00000 01100 01100 00000 01100 01100 00000|- 00000 00000 00000 11111 00000 00000 00000|< 00010 00100 01000 10000 01000 00100 00010'.split('|').forEach(l=>{const[c,...r]=l.split(' ');G[c]=r;});
+function vtext(str,px,color,depth=2,maxW=7.6){
+  str=String(str).toUpperCase().replace(/·/g,'-').replace(/…/g,'...');
+  const cols=Math.max(1,str.length*6-1);px=Math.min(px,maxW/cols);
+  const cells=[];[...str].forEach((ch,n)=>(G[ch]||[]).forEach((row,y)=>[...row].forEach((b,x)=>{if(b==='1')cells.push([n*6+x,y]);})));
+  const g=new THREE.Group();if(!cells.length)return g;
+  const m=new THREE.InstancedMesh(UNIT,mat(color),cells.length),t=new THREE.Matrix4();
+  cells.forEach(([x,y],i)=>m.setMatrixAt(i,t.makeTranslation(x-(cols-1)/2,3-y,0)));
+  m.scale.set(px,px,px*depth);m.frustumCulled=false;g.add(m);return g;
+}
+function vlines(str,px,color,maxChars){ // word-wrapped voxel text, top-anchored
+  const lines=[];let cur='';
+  String(str).split(' ').forEach(w=>{if(cur&&(cur+' '+w).length>maxChars){lines.push(cur);cur=w;}else cur=(cur+' '+w).trim();});
+  if(cur)lines.push(cur);
+  const g=new THREE.Group(),q=Math.min(px,7.6/(maxChars*6-1));
+  lines.forEach((l,i)=>{const t=vtext(l,q,color);t.position.y=-i*9*q;g.add(t);});
+  return g;
+}
+function ubtn(label,w,h,x,y,fn,color){ // 3D button: a box with cube text on its face
+  const g=new THREE.Group(),b=new THREE.Mesh(box(w,h,.6),mat(color));
+  b.userData={fn,label};
+  const t=vtext(label,h*.7/7,0xffffff,2,w*.85);t.position.z=.3;
+  g.add(b,t);g.position.set(x,y,0);uiRoot.add(g);uiHits.push(b);
+}
+function ucrew(scale,y){ // the same crewmate cube players use in the game
+  const g=makeCube(0xc51111);g.scale.setScalar(scale);g.position.y=y-.6*scale;uiRoot.add(g);uiSpin.push(g);
+}
+function uiBuild(v){
+  uiRoot.traverse(o=>{if(o.isInstancedMesh)o.dispose();});
+  while(uiRoot.children.length)uiRoot.remove(uiRoot.children[0]);
+  uiHits=[];uiSpin=[];uiSway=[];
+  const put=(o,x,y,z=0)=>{o.position.set(x,y,z);uiRoot.add(o);return o;};
+  if(v==='menu'){
+    uiSway.push(put(vtext('AMONG',.24,0xffffff,3),0,5.6),put(vtext('CUBE',.24,0xffffff,3),0,3.7));
+    ucrew(2.2,-.2);
+    ubtn('START?',5,1.5,0,-3.5,()=>L('start').click(),0xc51111);
+    ubtn('HOST',3.4,1.2,-1.8,-5.4,()=>L('host').click(),0x132ed1);
+    ubtn('JOIN',3.4,1.2,1.8,-5.4,()=>L('join').click(),0x117f2d);
+    return;
+  }
+  const tone=v.bad?0xff6b6b:0xdddddd;
+  put(vlines(v.t,.16,0xffffff,11),0,6.4);
+  if(v.inp){ // JOIN tab: 4 code slots + a 3D keypad
+    for(let i=0;i<4;i++){const x=(i-1.5)*1.7;put(new THREE.Mesh(box(1.5,1.9,.3),mat(0x1b2238)),x,4,0);put(vtext(v.j[i]||'',.2,0xffffff),x,4,.2);}
+    put(vlines(v.s,.1,tone,16),0,2.7);
+    [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ<'].forEach((ch,i)=>ubtn(ch,.95,.95,((i%7)-3)*1.05,1.1-Math.floor(i/7)*1.05,()=>{
+      const j=L('jin');j.value=ch==='<'?j.value.slice(0,-1):j.value.length<4?j.value+ch:j.value;},0x3a4466));
+    ubtn('JOIN',4,1.2,0,-3.5,()=>L('jgo').click(),0x117f2d);
+    ubtn('BACK',3,1,0,-5.2,()=>L('lleave').click(),0x555b6e);
+    return;
+  }
+  if(v.c){put(vtext(v.c,.3,0xffffff,3),0,3.8);ucrew(1.2,1);} // HOST/room tab
+  put(vlines(v.s,.12,tone,11),0,v.c?-.7:2.2);
+  if(v.st)ubtn('START',4,1.2,0,-4,()=>L('lstart').click(),0xc51111);
+  ubtn('BACK',3,1,0,v.c?-5.6:-5.4,()=>L('lleave').click(),0x555b6e);
+}
+function uiFrame(now){
+  const lob=L('lobby').style.display!=='none';
+  const v=lob?{t:L('lt').textContent,c:L('lcode').textContent,s:L('ls').textContent,bad:!!L('ls').style.color,inp:L('jin').style.display!=='none',j:L('jin').value,st:L('lstart').style.display!=='none'}:'menu';
+  const key=JSON.stringify(v);if(key!==uiKey){uiKey=key;uiBuild(v);}
+  uiSpin.forEach(g=>{g.rotation.y=now/1000;});
+  uiSway.forEach(g=>{g.rotation.y=Math.sin(now/900)*.25;});
+  renderer.render(uiScene,uiCam);
+}
+function uiTap(x,y){
+  uray.setFromCamera({x:x/innerWidth*2-1,y:1-y/innerHeight*2},uiCam);
+  const h=uray.intersectObjects(uiHits)[0];if(h)h.object.userData.fn();
+}
+// ---- end 3D UI ----
 
 // touch: left = joystick, right = look
 const sprintBtn=document.getElementById('sprint');
@@ -241,7 +328,7 @@ addEventListener('touchmove',e=>{
 function endT(e){
   for(const t of e.changedTouches){
     const a=taps[t.identifier];delete taps[t.identifier];
-    if(a&&e.type==='touchend'&&performance.now()-a[2]<250&&Math.hypot(t.clientX-a[0],t.clientY-a[1])<12)tapEject();
+    if(a&&e.type==='touchend'&&performance.now()-a[2]<250&&Math.hypot(t.clientX-a[0],t.clientY-a[1])<12)tapEject(t.clientX,t.clientY);
     if(t.identifier===moveId){moveId=null;jx=jy=0;knob.style.left='40px';knob.style.top='40px';
       stick.style.left='24px';stick.style.top='auto';stick.style.bottom='calc(env(safe-area-inset-bottom,0px) + 24px)';}
     if(t.identifier===lookId)lookId=null;
@@ -256,7 +343,8 @@ const sim=()=>!net.code||net.id===net.host; // solo or room host: runs the AI + 
 const peers=new Map();let inGame=false,lastSend=0,lastNpc=0;
 const num=v=>typeof v==='number'&&isFinite(v);
 
-function tapEject(){
+function tapEject(x,y){
+  if(uiUp())return uiTap(x,y);
   if(frozen()||!inGame)return;
   ray.setFromCamera({x:0,y:0},cam);
   let o=(ray.intersectObjects([walls,...crew],true)[0]||{}).object;
@@ -328,7 +416,8 @@ if(location.hash==='#restart'){location.hash='';begin(pickImp());} // skip the m
 let last=performance.now();
 function loop(now){
   const dt=Math.min(0.05,(now-last)/1000);last=now;
-  if(frozen()){requestAnimationFrame(loop);return;} // paused: freeze everything
+  const ui=uiUp();document.body.classList.toggle('ui',ui);
+  if(frozen()){if(ui)uiFrame(now);requestAnimationFrame(loop);return;} // paused: freeze everything
   let f=-jy,s=jx;
   const len=Math.hypot(f,s);if(len>1){f/=len;s/=len;}
   const sp=(sprintOn?9:5)*dt,sy_=Math.sin(p.yaw),cy=Math.cos(p.yaw);

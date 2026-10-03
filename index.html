@@ -20,9 +20,9 @@ canvas{display:block;width:100%;height:100%}
 #menu,#lobby{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;background:radial-gradient(circle at 50% 40%,#1b2238,#05060a 75%);padding:20px;text-align:center}
 #menu h1{margin:0;font-size:clamp(40px,13vw,96px);letter-spacing:4px;color:#fff;text-shadow:0 4px 16px rgba(0,0,0,.6)}
 #menu svg{width:clamp(110px,32vw,170px);height:auto}
-#start,#restart,#host,#join,#jgo,#lleave{font-family:'Amatic SC',cursive;font-weight:700;font-size:48px;color:#fff;background:#c51111;border:3px solid #fff;border-radius:14px;padding:6px 44px;cursor:pointer}
+#start,#restart,#host,#join,#jgo,#lleave,#lstart{font-family:'Amatic SC',cursive;font-weight:700;font-size:48px;color:#fff;background:#c51111;border:3px solid #fff;border-radius:14px;padding:6px 44px;cursor:pointer}
 #restart{margin-top:18px;font-size:36px}
-#host,#join,#jgo,#lleave{font-size:36px;padding:4px 30px}
+#host,#join,#jgo,#lleave,#lstart{font-size:36px;padding:4px 30px}
 .row{display:flex;gap:14px}
 #lt{margin:0;font-size:clamp(24px,7vw,40px);letter-spacing:4px}
 #lcode{font-size:clamp(56px,20vw,120px);letter-spacing:12px;font-weight:700;color:#fff}
@@ -50,6 +50,7 @@ canvas{display:block;width:100%;height:100%}
 <div id="lcode"></div>
 <input id="jin" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="CODE" style="display:none">
 <p id="ls"></p>
+<button id="lstart" type="button" style="display:none">Start</button>
 <button id="jgo" type="button" style="display:none">Join</button>
 <button id="lleave" type="button">Back</button>
 </div>
@@ -107,7 +108,8 @@ const colors=[0xc51111,0x132ed1,0x117f2d,0xed54ba,0xf5f557,0xef7d0e];
 const spots=[[2,1],[6,2],[15,1],[16,3],[2,3],[10,3],[3,7],[10,8],[16,7],[9,8]];
 const crew=[];
 const hitCrew=(x,z,r,self)=>crew.some(g=>g!==self&&Math.hypot(g.position.x-x,g.position.z-z)<r+0.5)||(self&&Math.hypot(p.x-x,p.z-z)<r+R);
-const imp=new Set();while(imp.size<2)imp.add(Math.floor(Math.random()*spots.length));
+let impLeft=2;
+const pickImp=()=>{const s=new Set();while(s.size<2)s.add(Math.random()*spots.length|0);return s;};
 function label(text,color){
   const c=document.createElement('canvas');c.width=256;c.height=64;
   const x=c.getContext('2d');x.fillStyle='rgba(0,0,0,.7)';x.fillRect(0,0,256,64);
@@ -115,28 +117,29 @@ function label(text,color){
   const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),fog:false}));
   s.scale.set(1.6,0.4,1);s.position.y=1.7;return s;
 }
-spots.forEach(([c,r],i)=>{
+function makeCube(col){
   const g=new THREE.Group();
-  const col=colors[i%colors.length];
   const body=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.2,0.7),new THREE.MeshLambertMaterial({color:col}));
   body.position.y=0.6;
   const visor=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.35,0.15),new THREE.MeshBasicMaterial({color:0x9fe4ff}));
   visor.position.set(0,0.8,0.38);
   const pack=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.7,0.25),new THREE.MeshLambertMaterial({color:col}));
   pack.position.set(0,0.6,-0.45);
-  const bad=imp.has(i);
-  g.userData.role=bad?'impostor':'crewmate';
-  const lab=bad?label('IMPOSTOR','#ff4040'):label('CREWMATE','#5cff7a');
-  lab.visible=false;lab.raycast=()=>{};g.userData.label=lab;
-  g.add(body,visor,pack,lab);
-  g.position.set(c*S+S/2,0,r*S+S/2);
-  g.rotation.y=Math.random()*6.28;
-  Object.assign(g.userData,{t:0,timer:Math.random()*2,moving:false,dir:0});
-  scene.add(g);crew.push(g);
-});
+  g.add(body,visor,pack);return g;
+}
+function spawn(imp){ // imp = Set of spot indices; clients pass an empty Set (roles stay hidden until ejected)
+  crew.forEach(g=>scene.remove(g));crew.length=0;impLeft=2;
+  spots.forEach(([c,r],i)=>{
+    const g=makeCube(colors[i%colors.length]);
+    g.position.set(c*S+S/2,0,r*S+S/2);g.rotation.y=Math.random()*6.28;
+    Object.assign(g.userData,{i,role:imp.has(i)?'impostor':'crewmate',t:0,timer:Math.random()*2,moving:false,dir:0,gx:g.position.x,gz:g.position.z});
+    scene.add(g);crew.push(g);
+  });
+}
+spawn(pickImp());
 
 const hud=document.getElementById('hud');
-const upd=()=>{hud.textContent='Impostors: '+crew.filter(g=>g.userData.role==='impostor').length+' · Crewmates: '+crew.filter(g=>g.userData.role!=='impostor').length+' · tap to eject';};
+const upd=()=>{hud.textContent='Impostors: '+impLeft+' · Crewmates: '+(crew.length-impLeft)+' · tap to eject';};
 upd();
 
 // player
@@ -149,20 +152,22 @@ addEventListener('resize',resize);resize();
 // pause (touch GUI): button pauses, tap the overlay to resume
 const msg=document.getElementById('msg'),menu=document.getElementById('menu');
 let over=false;
-const showMsg=(t,sub,c)=>{msg.firstElementChild.innerHTML='<b style="font-size:clamp(28px,9vw,48px);letter-spacing:4px;color:'+(c||'#fff')+'">'+t+'</b>'+(sub?'<br>'+sub:'')+'<br><button id="restart" type="button">Restart</button>';msg.style.display='';};
-document.getElementById('start').addEventListener('click',()=>{menu.style.display='none';});
+const showMsg=(t,sub,c)=>{msg.firstElementChild.innerHTML='<b style="font-size:clamp(28px,9vw,48px);letter-spacing:4px;color:'+(c||'#fff')+'">'+t+'</b>'+(sub?'<br>'+sub:'')+(net.code&&net.id!==net.host?'<br>Waiting for the host…':'<br><button id="restart" type="button">Restart</button>');msg.style.display='';};
+document.getElementById('start').addEventListener('click',()=>begin(pickImp()));
 msg.addEventListener('click',e=>{if(e.target.id==='restart')return restart();if(!over)msg.style.display='none';});
 document.getElementById('pause').addEventListener('click',()=>showMsg('PAUSED'));
 
 // ---- multiplayer lobby ----
 const SERVER='wss://amongcube.onrender.com'; // <- paste your Render URL here (wss://, no path)
 const L=id=>document.getElementById(id);
-let ws=null;const net={code:null,id:null,host:null,players:new Set()};
+let ws=null;const tx=o=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));};
+const net={code:null,id:null,host:null,players:new Set()};
 function lobby(title,code,status,input,bad){
   L('lobby').style.display='flex';
   L('lt').textContent=title;L('lcode').textContent=code||'';
   const s=L('ls');s.textContent=status||'';s.style.color=bad?'#ff6b6b':'';
   L('jin').style.display=L('jgo').style.display=input?'':'none';
+  L('lstart').style.display=code&&net.id===net.host?'':'none';
 }
 function leave(){
   if(ws){ws.onopen=ws.onmessage=ws.onclose=null;ws.close();ws=null;}
@@ -182,6 +187,7 @@ function connect(first){
     else if(m.t==='joined'){net.players.add(m.id);room();}
     else if(m.t==='left'){net.players.delete(m.id);room();}
     else if(m.t==='newhost'){net.host=m.id;room();}
+    gameMsg(m);
   };
   sock.onclose=()=>{
     clearTimeout(t);if(ws!==sock)return;
@@ -197,7 +203,8 @@ L('jgo').onclick=()=>{
   const m={t:'join',code:c};
   if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));else connect(m);
 };
-L('lleave').onclick=()=>{leave();L('lobby').style.display='none';};
+L('lleave').onclick=()=>{leave();toMenu();};
+L('lstart').onclick=()=>newRound();
 // ---- end lobby ----
 
 // touch: left = joystick, right = look
@@ -244,31 +251,84 @@ function endT(e){
 addEventListener('touchend',endT);addEventListener('touchcancel',endT);
 
 const ray=new THREE.Raycaster();ray.far=8;
+const frozen=()=>menu.style.display!=='none'||msg.style.display!=='none'||L('lobby').style.display!=='none';
+const sim=()=>!net.code||net.id===net.host; // solo or room host: runs the AI + rules
+const peers=new Map();let inGame=false,lastSend=0,lastNpc=0;
+const num=v=>typeof v==='number'&&isFinite(v);
+
 function tapEject(){
-  if(menu.style.display!=='none'||msg.style.display!=='none')return;
+  if(frozen()||!inGame)return;
   ray.setFromCamera({x:0,y:0},cam);
   let o=(ray.intersectObjects([walls,...crew],true)[0]||{}).object;
   while(o&&o.parent&&o.parent!==scene)o=o.parent;
   if(!crew.includes(o))return;
-  crew.splice(crew.indexOf(o),1); // stops its AI + collision
-  o.userData.label.visible=true;  // reveal role, then remove
-  const bad=o.userData.role==='impostor';
-  upd();
-  setTimeout(()=>{
-    scene.remove(o);
-    if(over)return;
-    if(!bad){over=true;showMsg('WRONG ONE!!!! RETRY?','','#ff4040');}
-    else if(!crew.some(c=>c.userData.role==='impostor')){over=true;showMsg('YOU WIN!','Both impostors ejected');}
-  },800);
+  if(sim())hostEject(o.userData.i);else tx({t:'req',k:'eject',i:o.userData.i});
 }
-const die=()=>{if(over)return;over=true;showMsg('SLAUGHTERED! RETRY?','','#ff4040');};
-const restart=()=>{location.hash='restart';location.reload();};
-if(location.hash==='#restart'){location.hash='';menu.style.display='none';} // skip the menu after Restart
+function applyEject(i,role){ // everyone: reveal the role, then remove the cube
+  const g=crew.find(c=>c.userData.i===i);if(!g)return;
+  crew.splice(crew.indexOf(g),1);
+  if(role==='impostor')impLeft--;
+  g.add(label(role==='impostor'?'IMPOSTOR':'CREWMATE',role==='impostor'?'#ff4040':'#5cff7a'));
+  upd();setTimeout(()=>scene.remove(g),800);
+}
+function hostEject(i){
+  const g=crew.find(c=>c.userData.i===i);if(!g||over)return;
+  const role=g.userData.role;
+  if(net.code)tx({t:'ev',k:'eject',i,role});
+  applyEject(i,role);
+  const r=role!=='impostor'?'wrong':impLeft===0?'win':null;
+  if(r)setTimeout(()=>hostEnd(r),800);
+}
+function showEnd(r){
+  over=true;
+  if(r==='win')showMsg('YOU WIN!','Both impostors ejected');
+  else if(r==='wrong')showMsg('WRONG ONE!!!! RETRY?','','#ff4040');
+  else showMsg('SLAUGHTERED! RETRY?','','#ff4040');
+}
+function hostEnd(r){if(over)return;if(net.code)tx({t:'ev',k:'end',r});showEnd(r);}
+function begin(imp){
+  spawn(imp);over=false;inGame=true;
+  Object.assign(p,{x:1.5*S,z:3.5*S,yaw:-Math.PI/2,pitch:0});
+  peers.forEach(v=>{v.x=p.x;v.z=p.z;}); // stale positions from the last round must not touch the new impostors
+  msg.style.display=menu.style.display=L('lobby').style.display='none';
+  L('pause').style.display=net.code?'none':''; // no pausing in a room: it would freeze the host's AI for everyone
+  upd();
+}
+function newRound(){if(!sim())return;begin(pickImp());if(net.code)tx({t:'ev',k:'start'});}
+function toMenu(){
+  inGame=over=false;peers.forEach(v=>scene.remove(v.g));peers.clear();
+  msg.style.display=L('lobby').style.display='none';menu.style.display='';L('pause').style.display='';
+}
+function gameMsg(m){ // everything that arrives from the server (peers' data is untrusted)
+  if(m.t==='ev'){
+    if(m.k==='start')begin(new Set());
+    else if(!inGame)return;
+    else if(m.k==='npc'&&Array.isArray(m.d)){
+      for(const a of m.d){
+        const g=Array.isArray(a)&&crew.find(c=>c.userData.i===a[0]);
+        if(g&&a.slice(1,4).every(num))Object.assign(g.userData,{gx:a[1],gz:a[2],dir:a[3],moving:!!a[4]});
+      }
+    }
+    else if(m.k==='eject'&&Number.isInteger(m.i))applyEject(m.i,m.role==='impostor'?'impostor':'crewmate');
+    else if(m.k==='end'&&!over&&(m.r==='win'||m.r==='wrong'||m.r==='slain'))showEnd(m.r);
+  }else if(m.t==='pos'&&inGame&&[m.x,m.z,m.yaw].every(num)){
+    let v=peers.get(m.from);
+    if(!v){
+      const g=makeCube(colors[m.from%colors.length]);g.add(label('P'+m.from,'#ffffff'));
+      g.position.set(m.x,0,m.z);scene.add(g);peers.set(m.from,v={g});
+    }
+    v.x=Math.max(0,Math.min(W,m.x));v.z=Math.max(0,Math.min(D,m.z));v.yaw=m.yaw;
+  }else if(m.t==='req'&&m.k==='eject'&&inGame&&sim()&&Number.isInteger(m.i))hostEject(m.i);
+  else if(m.t==='left'){const v=peers.get(m.id);if(v){scene.remove(v.g);peers.delete(m.id);}}
+  else if(m.t==='newhost'&&inGame){over=true;showMsg('HOST LEFT');} // new host gets a Restart button
+}
+const restart=()=>{if(net.code)return newRound();location.hash='restart';location.reload();};
+if(location.hash==='#restart'){location.hash='';begin(pickImp());} // skip the menu after Restart
 
 let last=performance.now();
 function loop(now){
   const dt=Math.min(0.05,(now-last)/1000);last=now;
-  if(menu.style.display!=='none'||msg.style.display!=='none'){requestAnimationFrame(loop);return;} // paused: freeze everything
+  if(frozen()){requestAnimationFrame(loop);return;} // paused: freeze everything
   let f=-jy,s=jx;
   const len=Math.hypot(f,s);if(len>1){f/=len;s/=len;}
   const sp=(sprintOn?9:5)*dt,sy_=Math.sin(p.yaw),cy=Math.cos(p.yaw);
@@ -277,14 +337,21 @@ function loop(now){
   if(!hits(p.x,p.z+dz)&&!hitCrew(p.x,p.z+dz,R))p.z+=dz;
   cam.position.set(p.x,EYE,p.z);
   cam.rotation.set(p.pitch,p.yaw,0);
+  const host=sim(),targets=[p,...peers.values()];
   crew.forEach(g=>{
-    const u=g.userData;u.timer-=dt;
+    const u=g.userData;
+    if(!host){ // clients just follow the host's positions
+      const k=Math.min(1,dt*12);g.position.x+=(u.gx-g.position.x)*k;g.position.z+=(u.gz-g.position.z)*k;
+      if(u.moving){g.rotation.y=u.dir;u.t+=dt*10;g.position.y=Math.abs(Math.sin(u.t))*0.08;}else g.position.y=0;
+      return;
+    }
+    u.timer-=dt;
     if(u.timer<=0){u.moving=Math.random()<0.75;u.dir=Math.random()*6.283;u.timer=1+Math.random()*3;}
     u.chase=false;
     if(u.role==='impostor'){
-      const ex=p.x-g.position.x,ez=p.z-g.position.z,d=Math.hypot(ex,ez);
-      if(d<6){u.dir=Math.atan2(ex,ez);u.moving=true;u.chase=true;}
-      if(d<1.2)die();
+      let best=null,bd=6;
+      for(const t of targets){const d=Math.hypot(t.x-g.position.x,t.z-g.position.z);if(d<1.2)return hostEnd('slain');if(d<bd){bd=d;best=t;}}
+      if(best){u.dir=Math.atan2(best.x-g.position.x,best.z-g.position.z);u.moving=true;u.chase=true;}
     }
     if(!u.moving){g.position.y=0;return;}
     const nx=g.position.x+Math.sin(u.dir)*(u.chase?3:1.6)*dt,nz=g.position.z+Math.cos(u.dir)*(u.chase?3:1.6)*dt;
@@ -294,6 +361,12 @@ function loop(now){
     if(!ok)u.timer=0;
     g.rotation.y=u.dir;u.t+=dt*10;g.position.y=Math.abs(Math.sin(u.t))*0.08;
   });
+  if(net.code){
+    if(now-lastSend>80){lastSend=now;tx({t:'pos',x:+p.x.toFixed(2),z:+p.z.toFixed(2),yaw:+p.yaw.toFixed(2)});}
+    if(host&&now-lastNpc>100){lastNpc=now;tx({t:'ev',k:'npc',d:crew.map(g=>[g.userData.i,+g.position.x.toFixed(1),+g.position.z.toFixed(1),+g.rotation.y.toFixed(2),g.userData.moving?1:0])});}
+  }
+  const k=Math.min(1,dt*12);
+  peers.forEach(v=>{v.g.position.x+=(v.x-v.g.position.x)*k;v.g.position.z+=(v.z-v.g.position.z)*k;v.g.rotation.y=v.yaw+Math.PI;});
   renderer.render(scene,cam);
   requestAnimationFrame(loop);
 }

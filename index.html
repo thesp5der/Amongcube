@@ -83,13 +83,13 @@ const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 document.body.prepend(renderer.domElement);
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0xbfd4ee);
-scene.fog=new THREE.Fog(0xbfd4ee,25,80);
+scene.background=new THREE.Color(0x8497b8);
+scene.fog=new THREE.Fog(0x8497b8,25,80);
 const cam=new THREE.PerspectiveCamera(75,1,0.1,100);
 cam.rotation.order='YXZ';
 scene.add(cam);
-scene.add(new THREE.AmbientLight(0xffffff,1.1));
-const lamp=new THREE.PointLight(0xffffff,1,22);
+scene.add(new THREE.AmbientLight(0xffffff,.75));
+const lamp=new THREE.PointLight(0xffffff,.45,22);
 cam.add(lamp);
 
 // floor + ceiling
@@ -121,9 +121,13 @@ function setMap(rows){
 }
 function drawMini(){
   mc.drawImage(miniImg,0,0);
-  const x=p.x/S*MS,z=p.z/S*MS;
-  mc.fillStyle=mc.strokeStyle='#ffd400';mc.beginPath();mc.arc(x,z,3,0,6.283);mc.fill();
-  mc.beginPath();mc.moveTo(x,z);mc.lineTo(x-Math.sin(p.yaw)*8,z-Math.cos(p.yaw)*8);mc.stroke();
+  mc.fillStyle='#22c55e';tasks.forEach(t=>{if(!t.userData.done)mc.fillRect(t.position.x/S*MS-2,t.position.z/S*MS-2,4,4);});
+  const dot=(g,col,r)=>{mc.fillStyle=col;mc.beginPath();mc.arc(g.x/S*MS,g.z/S*MS,r,0,6.283);mc.fill();};
+  const hex=c=>'#'+c.toString(16).padStart(6,'0');
+  crew.forEach(g=>dot(g.position,hex(colors[g.userData.i%colors.length]),2));          // other crewmates (roles stay hidden)
+  peers.forEach((v,id)=>{dot(v.g.position,hex(colors[id%colors.length]),3);mc.strokeStyle='#fff';mc.stroke();}); // other players: bigger, outlined
+  mc.strokeStyle=mc.fillStyle='#ffd400';dot(p,'#ffd400',3);                                // you, with a facing line
+  const x=p.x/S*MS,z=p.z/S*MS;mc.beginPath();mc.moveTo(x,z);mc.lineTo(x-Math.sin(p.yaw)*8,z-Math.cos(p.yaw)*8);mc.stroke();
 }
 // random map: flip some interior walls/floors of the base model, keeping every floor reachable
 const SAFE=()=>[...spots,[1,3]]; // crew spawns + player start must stay floor
@@ -145,6 +149,13 @@ function genMap(){
   return g.map(r=>r.join(''));
 }
 const validMap=m=>Array.isArray(m)&&m.length===ROWS&&m.every(r=>typeof r==='string'&&r.length===COLS&&/^[#.]+$/.test(r))&&SAFE().every(([c,r])=>m[r][c]==='.');
+function genTasks(map){
+  const keep=new Set(SAFE().map(([c,r])=>r*COLS+c)),f=[];
+  map.forEach((row,r)=>[...row].forEach((ch,c)=>{if(ch==='.'&&!keep.has(r*COLS+c))f.push([c,r]);}));
+  for(let i=f.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[f[i],f[j]]=[f[j],f[i]];}
+  return f.slice(0,5);
+}
+const validTasks=(t,map)=>Array.isArray(t)&&t.length<=8&&t.every(a=>Array.isArray(a)&&Number.isInteger(a[0])&&Number.isInteger(a[1])&&!!map[a[1]]&&map[a[1]][a[0]]==='.');
 setMap(BASE);
 
 // crewmate cubes
@@ -152,7 +163,7 @@ const colors=[0xc51111,0x132ed1,0x117f2d,0xed54ba,0xf5f557,0xef7d0e];
 const spots=[[2,1],[6,2],[15,1],[16,3],[2,3],[10,3],[3,7],[10,8],[16,7],[9,8]];
 const crew=[];
 const hitCrew=(x,z,r,self)=>crew.some(g=>g!==self&&Math.hypot(g.position.x-x,g.position.z-z)<r+0.5)||(self&&Math.hypot(p.x-x,p.z-z)<r+R);
-let impLeft=2;
+let impLeft=2;const tasks=[];
 const pickImp=()=>{const s=new Set();while(s.size<2)s.add(Math.random()*spots.length|0);return s;};
 function label(text,color){
   const c=document.createElement('canvas');c.width=256;c.height=64;
@@ -183,7 +194,7 @@ function spawn(imp){ // imp = Set of spot indices; clients pass an empty Set (ro
 spawn(pickImp());
 
 const hud=document.getElementById('hud');
-const upd=()=>{hud.textContent='Impostors: '+impLeft+' · Crewmates: '+(crew.length-impLeft)+' · tap to eject';};
+const upd=()=>{hud.textContent='Impostors: '+impLeft+' · Crewmates: '+(crew.length-impLeft)+' · Tasks: '+tasks.filter(t=>t.userData.done).length+'/'+tasks.length+' · tap to eject';};
 upd();
 
 // player
@@ -253,8 +264,8 @@ L('lstart').onclick=()=>newRound();
 // ---- end lobby ----
 // ---- 3D UI: a skin over the hidden DOM menu/lobby (the DOM stays the source of truth; 3D buttons click it) ----
 const uiScene=new THREE.Scene(),uiCam=new THREE.PerspectiveCamera(50,1,.1,100),uiRoot=new THREE.Group(),uray=new THREE.Raycaster(),uiQ=new THREE.Vector3();
-uiScene.background=new THREE.Color(0x0b1020);
-const uiSun=new THREE.DirectionalLight(0xffffff,.9);uiSun.position.set(3,6,8);
+uiScene.background=new THREE.Color(0x34456a);
+const uiSun=new THREE.DirectionalLight(0xffffff,.8);uiSun.position.set(3,6,8);
 uiScene.add(new THREE.AmbientLight(0xffffff,.8),uiSun,uiRoot);
 function uiFit(){ // fit an 8 x 14 unit layout to any screen
   const t=Math.tan(25*Math.PI/180);uiCam.aspect=innerWidth/innerHeight;
@@ -387,11 +398,28 @@ function tapEject(x,y){
   if(uiUp())return uiTap(x,y);
   if(frozen()||!inGame)return;
   ray.setFromCamera({x:0,y:0},cam);
-  let o=(ray.intersectObjects([walls,...crew],true)[0]||{}).object;
+  let o=(ray.intersectObjects([walls,...crew,...tasks],true)[0]||{}).object;
   while(o&&o.parent&&o.parent!==scene)o=o.parent;
+  if(tasks.includes(o)){const i=o.userData.i;if(!o.userData.done){if(sim())hostTask(i);else tx({t:'req',k:'task',i});}return;}
   if(!crew.includes(o))return;
   if(sim())hostEject(o.userData.i);else tx({t:'req',k:'eject',i:o.userData.i});
 }
+const TB=new THREE.BoxGeometry(1,1,1),TT=new THREE.BoxGeometry(.7,.15,.7);
+function spawnTasks(cells){
+  tasks.forEach(t=>scene.remove(t));tasks.length=0;
+  cells.forEach(([c,r],i)=>{
+    const g=new THREE.Group(),body=new THREE.MeshLambertMaterial({color:0x22c55e}),top=new THREE.MeshBasicMaterial({color:0xbbf7d0});
+    const b=new THREE.Mesh(TB,body),t=new THREE.Mesh(TT,top);b.position.y=.5;t.position.y=1.08;
+    const lab=label('TASK','#7dffa0');g.add(b,t,lab);
+    g.userData={i,done:false,body,top,lab};g.position.set(c*S+S/2,0,r*S+S/2);scene.add(g);tasks.push(g);
+  });
+}
+function applyTask(i){
+  const g=tasks.find(t=>t.userData.i===i);if(!g||g.userData.done)return;
+  const u=g.userData;u.done=true;u.body.color.set(0x6b7280);u.top.color.set(0x9ca3af);
+  g.remove(u.lab);u.lab=label('DONE','#9ca3af');g.add(u.lab);upd();
+}
+function hostTask(i){if(over)return;if(net.code)tx({t:'ev',k:'task',i});applyTask(i);}
 function applyEject(i,role){ // everyone: reveal the role, then remove the cube
   const g=crew.find(c=>c.userData.i===i);if(!g)return;
   crew.splice(crew.indexOf(g),1);
@@ -414,22 +442,22 @@ function showEnd(r){
   else showMsg('SLAUGHTERED! RETRY?','','#ff4040');
 }
 function hostEnd(r){if(over)return;if(net.code)tx({t:'ev',k:'end',r});showEnd(r);}
-function begin(imp,map=genMap()){
-  setMap(map);spawn(imp);over=false;inGame=true;
+function begin(imp,map=genMap(),cells=genTasks(map)){
+  setMap(map);spawn(imp);spawnTasks(cells);over=false;inGame=true;
   Object.assign(p,{x:1.5*S,z:3.5*S,yaw:-Math.PI/2,pitch:0});
   peers.forEach(v=>{v.x=p.x;v.z=p.z;}); // stale positions from the last round must not touch the new impostors
   msg.style.display=menu.style.display=L('lobby').style.display='none';
   L('pause').style.display=net.code?'none':''; // no pausing in a room: it would freeze the host's AI for everyone
   upd();
 }
-function newRound(){if(!sim())return;const map=genMap();begin(pickImp(),map);if(net.code)tx({t:'ev',k:'start',map});}
+function newRound(){if(!sim())return;const map=genMap(),cells=genTasks(map);begin(pickImp(),map,cells);if(net.code)tx({t:'ev',k:'start',map,tasks:cells});}
 function toMenu(){
   inGame=over=false;peers.forEach(v=>scene.remove(v.g));peers.clear();
   msg.style.display=L('lobby').style.display='none';menu.style.display='';L('pause').style.display='';
 }
 function gameMsg(m){ // everything that arrives from the server (peers' data is untrusted)
   if(m.t==='ev'){
-    if(m.k==='start')begin(new Set(),validMap(m.map)?m.map:BASE);
+    if(m.k==='start'){const mp=validMap(m.map)?m.map:BASE;begin(new Set(),mp,validTasks(m.tasks,mp)?m.tasks:[]);}
     else if(!inGame)return;
     else if(m.k==='npc'&&Array.isArray(m.d)){
       for(const a of m.d){
@@ -437,6 +465,7 @@ function gameMsg(m){ // everything that arrives from the server (peers' data is 
         if(g&&a.slice(1,4).every(num))Object.assign(g.userData,{gx:a[1],gz:a[2],dir:a[3],moving:!!a[4]});
       }
     }
+    else if(m.k==='task'&&Number.isInteger(m.i))applyTask(m.i);
     else if(m.k==='eject'&&Number.isInteger(m.i))applyEject(m.i,m.role==='impostor'?'impostor':'crewmate');
     else if(m.k==='end'&&!over&&(m.r==='win'||m.r==='wrong'||m.r==='slain'))showEnd(m.r);
   }else if(m.t==='pos'&&inGame&&[m.x,m.z,m.yaw].every(num)){
@@ -446,7 +475,7 @@ function gameMsg(m){ // everything that arrives from the server (peers' data is 
       g.position.set(m.x,0,m.z);scene.add(g);peers.set(m.from,v={g});
     }
     v.x=Math.max(0,Math.min(W,m.x));v.z=Math.max(0,Math.min(D,m.z));v.yaw=m.yaw;
-  }else if(m.t==='req'&&m.k==='eject'&&inGame&&sim()&&Number.isInteger(m.i))hostEject(m.i);
+  }else if(m.t==='req'&&inGame&&sim()&&Number.isInteger(m.i)){if(m.k==='eject')hostEject(m.i);else if(m.k==='task')hostTask(m.i);}
   else if(m.t==='left'){const v=peers.get(m.id);if(v){scene.remove(v.g);peers.delete(m.id);}}
   else if(m.t==='newhost'&&inGame){over=true;showMsg('HOST LEFT');} // new host gets a Restart button
 }

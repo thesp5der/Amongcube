@@ -8,7 +8,7 @@
 <style>
 html,body{margin:0;height:100%;background:#05060a;overflow:hidden;touch-action:none;font-family:system-ui,sans-serif;color:#fff;-webkit-user-select:none;user-select:none}
 canvas{display:block;width:100%;height:100%}
-#hud{position:fixed;top:0;left:0;right:0;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 0;font-size:13px;opacity:.8;pointer-events:none;text-shadow:0 1px 2px #000}
+#hud{position:fixed;top:0;left:0;right:140px;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 0;font-size:13px;opacity:.8;pointer-events:none;text-shadow:0 1px 2px #000}
 #stick{position:fixed;left:24px;bottom:calc(env(safe-area-inset-bottom,0px) + 24px);width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.3);display:none}
 #knob{position:absolute;left:40px;top:40px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.55)}
 .touch #stick{display:block}
@@ -16,14 +16,16 @@ canvas{display:block;width:100%;height:100%}
 #sprint.on{background:rgba(255,200,0,.55)}
 .touch #sprint{display:flex}
 #msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;background:rgba(0,0,0,.5);font-size:18px;line-height:1.5;padding:20px}
-#pause{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);right:12px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.4);color:#fff;font-size:18px;line-height:1;padding:0}
+#pause{position:fixed;top:calc(env(safe-area-inset-top,0px) + 84px);right:12px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.4);color:#fff;font-size:18px;line-height:1;padding:0}
 #menu,#lobby{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;background:radial-gradient(circle at 50% 40%,#1b2238,#05060a 75%);padding:20px;text-align:center}
 #menu h1{margin:0;font-size:clamp(40px,13vw,96px);letter-spacing:4px;color:#fff;text-shadow:0 4px 16px rgba(0,0,0,.6)}
 #menu svg{width:clamp(110px,32vw,170px);height:auto}
 #start,#restart,#host,#join,#jgo,#lleave,#lstart{font-family:'Amatic SC',cursive;font-weight:700;font-size:48px;color:#fff;background:#c51111;border:3px solid #fff;border-radius:14px;padding:6px 44px;cursor:pointer}
 #restart{margin-top:18px;font-size:36px}
-#menu,#lobby{opacity:0;pointer-events:none}
-body.ui #stick,body.ui #sprint,body.ui #pause,body.ui #cross,body.ui #hud{display:none!important}
+#menu,#lobby{visibility:hidden;pointer-events:none}
+#jin{position:fixed;left:50%;top:30%;transform:translate(-50%,-50%);visibility:visible;pointer-events:auto}
+#mini{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);right:12px;width:120px;height:66px;border:2px solid rgba(255,255,255,.5);border-radius:6px;background:rgba(0,0,0,.4);pointer-events:none}
+body.ui #mini,body.ui #stick,body.ui #sprint,body.ui #pause,body.ui #cross,body.ui #hud{display:none!important}
 #host,#join,#jgo,#lleave,#lstart{font-size:36px;padding:4px 30px}
 .row{display:flex;gap:14px}
 #lt{margin:0;font-size:clamp(24px,7vw,40px);letter-spacing:4px}
@@ -37,6 +39,7 @@ body.ui #stick,body.ui #sprint,body.ui #pause,body.ui #cross,body.ui #hud{displa
 <body>
 <div id="hud">Among Cube — find the crewmates</div>
 <div id="cross"></div>
+<canvas id="mini" width="120" height="66"></canvas>
 <button id="sprint" type="button" aria-label="Sprint">SPRINT</button>
 <button id="pause" type="button" aria-label="Pause">❚❚</button>
 <div id="stick"><div id="knob"></div></div>
@@ -59,7 +62,7 @@ body.ui #stick,body.ui #sprint,body.ui #pause,body.ui #cross,body.ui #hud{displa
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 (function(){
-const MAP=[
+const BASE=[
 "####################",
 "#.......#..........#",
 "#.......#..........#",
@@ -71,6 +74,7 @@ const MAP=[
 "#..................#",
 "#......#.....#.....#",
 "####################"];
+let MAP=BASE;const COLS=BASE[0].length,ROWS=BASE.length;
 const S=4,H=3,R=0.35,EYE=0.8;
 const isWall=(x,z)=>{const c=Math.floor(x/S),r=Math.floor(z/S);return !MAP[r]||MAP[r][c]!=='.';};
 const hits=(x,z,r=R)=>isWall(x-r,z-r)||isWall(x+r,z-r)||isWall(x-r,z+r)||isWall(x+r,z+r);
@@ -98,12 +102,50 @@ ceil.rotation.x=Math.PI/2;ceil.position.set(W/2,H,D/2);scene.add(ceil);
 // walls
 const wallMat=new THREE.MeshLambertMaterial({color:0x9fb2d6});
 const wallGeo=new THREE.BoxGeometry(S,H,S);
-const wallPos=[];
-MAP.forEach((row,r)=>[...row].forEach((ch,c)=>{if(ch==='#')wallPos.push([c,r]);}));
-const walls=new THREE.InstancedMesh(wallGeo,wallMat,wallPos.length),m4=new THREE.Matrix4();
-wallPos.forEach(([c,r],i)=>walls.setMatrixAt(i,m4.makeTranslation(c*S+S/2,H/2,r*S+S/2)));
-walls.frustumCulled=false; // r128 culls by the single base box at the origin
-scene.add(walls);
+let walls=null;const m4=new THREE.Matrix4();
+function buildWalls(){
+  if(walls){scene.remove(walls);walls.dispose();}
+  const pos=[];MAP.forEach((row,r)=>[...row].forEach((ch,c)=>{if(ch==='#')pos.push([c,r]);}));
+  walls=new THREE.InstancedMesh(wallGeo,wallMat,pos.length);
+  pos.forEach(([c,r],i)=>walls.setMatrixAt(i,m4.makeTranslation(c*S+S/2,H/2,r*S+S/2)));
+  walls.frustumCulled=false; // r128 culls by the single base box at the origin
+  scene.add(walls);
+}
+// minimap: a 2D canvas of the current map + you
+const mini=document.getElementById('mini'),mc=mini.getContext('2d'),MS=6;let miniImg=null;
+function setMap(rows){
+  MAP=rows;buildWalls();
+  miniImg=document.createElement('canvas');miniImg.width=COLS*MS;miniImg.height=ROWS*MS;
+  const x=miniImg.getContext('2d');
+  MAP.forEach((row,r)=>[...row].forEach((ch,c)=>{x.fillStyle=ch==='#'?'#9fb2d6':'#1b2238';x.fillRect(c*MS,r*MS,MS,MS);}));
+}
+function drawMini(){
+  mc.drawImage(miniImg,0,0);
+  const x=p.x/S*MS,z=p.z/S*MS;
+  mc.fillStyle=mc.strokeStyle='#ffd400';mc.beginPath();mc.arc(x,z,3,0,6.283);mc.fill();
+  mc.beginPath();mc.moveTo(x,z);mc.lineTo(x-Math.sin(p.yaw)*8,z-Math.cos(p.yaw)*8);mc.stroke();
+}
+// random map: flip some interior walls/floors of the base model, keeping every floor reachable
+const SAFE=()=>[...spots,[1,3]]; // crew spawns + player start must stay floor
+function connected(g){
+  let floors=0;g.forEach(r=>r.forEach(ch=>{if(ch==='.')floors++;}));
+  const seen=new Set([3*COLS+1]),q=[[1,3]];
+  while(q.length){const [c,r]=q.pop();for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    const nc=c+dc,nr=r+dr,k=nr*COLS+nc;if(g[nr]&&g[nr][nc]==='.'&&!seen.has(k)){seen.add(k);q.push([nc,nr]);}}}
+  return seen.size===floors;
+}
+function genMap(){
+  const g=BASE.map(r=>[...r]),keep=new Set(SAFE().map(([c,r])=>r*COLS+c));
+  for(let n=0,flips=0;n<400&&flips<14;n++){
+    const c=1+Math.random()*(COLS-2)|0,r=1+Math.random()*(ROWS-2)|0;
+    if(keep.has(r*COLS+c))continue;
+    const old=g[r][c];g[r][c]=old==='#'?'.':'#';
+    if(connected(g))flips++;else g[r][c]=old;
+  }
+  return g.map(r=>r.join(''));
+}
+const validMap=m=>Array.isArray(m)&&m.length===ROWS&&m.every(r=>typeof r==='string'&&r.length===COLS&&/^[#.]+$/.test(r))&&SAFE().every(([c,r])=>m[r][c]==='.');
+setMap(BASE);
 
 // crewmate cubes
 const colors=[0xc51111,0x132ed1,0x117f2d,0xed54ba,0xf5f557,0xef7d0e];
@@ -198,18 +240,19 @@ function connect(first){
   };
 }
 L('host').onclick=()=>connect({t:'host'});
-L('join').onclick=()=>{lobby('JOIN A ROOM','','',true);L('jin').value='';};
+L('join').onclick=()=>{lobby('JOIN A ROOM','','',true);L('jin').value='';L('jin').focus();};
 L('jgo').onclick=()=>{
   const c=L('jin').value.toUpperCase().replace(/[^A-Z]/g,'');
   if(c.length!==4)return lobby('JOIN A ROOM','','Enter the 4-letter room code',true,true);
   const m={t:'join',code:c};
   if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));else connect(m);
 };
+L('jin').onkeydown=e=>{if(e.key==='Enter')L('jgo').click();};
 L('lleave').onclick=()=>{leave();toMenu();};
 L('lstart').onclick=()=>newRound();
 // ---- end lobby ----
 // ---- 3D UI: a skin over the hidden DOM menu/lobby (the DOM stays the source of truth; 3D buttons click it) ----
-const uiScene=new THREE.Scene(),uiCam=new THREE.PerspectiveCamera(50,1,.1,100),uiRoot=new THREE.Group(),uray=new THREE.Raycaster();
+const uiScene=new THREE.Scene(),uiCam=new THREE.PerspectiveCamera(50,1,.1,100),uiRoot=new THREE.Group(),uray=new THREE.Raycaster(),uiQ=new THREE.Vector3();
 uiScene.background=new THREE.Color(0x0b1020);
 const uiSun=new THREE.DirectionalLight(0xffffff,.9);uiSun.position.set(3,6,8);
 uiScene.add(new THREE.AmbientLight(0xffffff,.8),uiSun,uiRoot);
@@ -219,7 +262,7 @@ function uiFit(){ // fit an 8 x 14 unit layout to any screen
 }
 addEventListener('resize',uiFit);uiFit();
 const uiUp=()=>menu.style.display!=='none'||L('lobby').style.display!=='none';
-let uiHits=[],uiSpin=[],uiSway=[],uiKey='';
+let uiHits=[],uiSpin=[],uiKey='';
 const mats={},boxes={},UNIT=new THREE.BoxGeometry(.92,.92,1),G={};
 const mat=c=>mats[c]||(mats[c]=new THREE.MeshLambertMaterial({color:c}));
 const box=(w,h,d)=>boxes[[w,h,d]]||(boxes[[w,h,d]]=new THREE.BoxGeometry(w,h,d));
@@ -254,10 +297,10 @@ function ucrew(scale,y){ // the same crewmate cube players use in the game
 function uiBuild(v){
   uiRoot.traverse(o=>{if(o.isInstancedMesh)o.dispose();});
   while(uiRoot.children.length)uiRoot.remove(uiRoot.children[0]);
-  uiHits=[];uiSpin=[];uiSway=[];
+  uiHits=[];uiSpin=[];
   const put=(o,x,y,z=0)=>{o.position.set(x,y,z);uiRoot.add(o);return o;};
   if(v==='menu'){
-    uiSway.push(put(vtext('AMONG',.24,0xffffff,3),0,5.6),put(vtext('CUBE',.24,0xffffff,3),0,3.7));
+    put(vtext('AMONG',.24,0xffffff,3),0,5.6);put(vtext('CUBE',.24,0xffffff,3),0,3.7);
     ucrew(2.2,-.2);
     ubtn('START?',5,1.5,0,-3.5,()=>L('start').click(),0xc51111);
     ubtn('HOST',3.4,1.2,-1.8,-5.4,()=>L('host').click(),0x132ed1);
@@ -266,13 +309,10 @@ function uiBuild(v){
   }
   const tone=v.bad?0xff6b6b:0xdddddd;
   put(vlines(v.t,.16,0xffffff,11),0,6.4);
-  if(v.inp){ // JOIN tab: 4 code slots + a 3D keypad
-    for(let i=0;i<4;i++){const x=(i-1.5)*1.7;put(new THREE.Mesh(box(1.5,1.9,.3),mat(0x1b2238)),x,4,0);put(vtext(v.j[i]||'',.2,0xffffff),x,4,.2);}
-    put(vlines(v.s,.1,tone,16),0,2.7);
-    [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ<'].forEach((ch,i)=>ubtn(ch,.95,.95,((i%7)-3)*1.05,1.1-Math.floor(i/7)*1.05,()=>{
-      const j=L('jin');j.value=ch==='<'?j.value.slice(0,-1):j.value.length<4?j.value+ch:j.value;},0x3a4466));
-    ubtn('JOIN',4,1.2,0,-3.5,()=>L('jgo').click(),0x117f2d);
-    ubtn('BACK',3,1,0,-5.2,()=>L('lleave').click(),0x555b6e);
+  if(v.inp){ // JOIN tab: the real <input> sits under the title and the phone keyboard types the code
+    put(vlines(v.s,.1,tone,16),0,2.8);
+    ubtn('JOIN',4,1.2,0,.6,()=>L('jgo').click(),0x117f2d);
+    ubtn('BACK',3,1,0,-1.2,()=>L('lleave').click(),0x555b6e);
     return;
   }
   if(v.c){put(vtext(v.c,.3,0xffffff,3),0,3.8);ucrew(1.2,1);} // HOST/room tab
@@ -282,11 +322,11 @@ function uiBuild(v){
 }
 function uiFrame(now){
   const lob=L('lobby').style.display!=='none';
-  const v=lob?{t:L('lt').textContent,c:L('lcode').textContent,s:L('ls').textContent,bad:!!L('ls').style.color,inp:L('jin').style.display!=='none',j:L('jin').value,st:L('lstart').style.display!=='none'}:'menu';
+  const v=lob?{t:L('lt').textContent,c:L('lcode').textContent,s:L('ls').textContent,bad:!!L('ls').style.color,inp:L('jin').style.display!=='none',st:L('lstart').style.display!=='none'}:'menu';
   const key=JSON.stringify(v);if(key!==uiKey){uiKey=key;uiBuild(v);}
   uiSpin.forEach(g=>{g.rotation.y=now/1000;});
-  uiSway.forEach(g=>{g.rotation.y=Math.sin(now/900)*.25;});
   renderer.render(uiScene,uiCam);
+  if(v.inp)L('jin').style.top=(1-uiQ.set(0,4,0).project(uiCam).y)/2*innerHeight+'px'; // park the input in the 3D gap
 }
 function uiTap(x,y){
   uray.setFromCamera({x:x/innerWidth*2-1,y:1-y/innerHeight*2},uiCam);
@@ -374,22 +414,22 @@ function showEnd(r){
   else showMsg('SLAUGHTERED! RETRY?','','#ff4040');
 }
 function hostEnd(r){if(over)return;if(net.code)tx({t:'ev',k:'end',r});showEnd(r);}
-function begin(imp){
-  spawn(imp);over=false;inGame=true;
+function begin(imp,map=genMap()){
+  setMap(map);spawn(imp);over=false;inGame=true;
   Object.assign(p,{x:1.5*S,z:3.5*S,yaw:-Math.PI/2,pitch:0});
   peers.forEach(v=>{v.x=p.x;v.z=p.z;}); // stale positions from the last round must not touch the new impostors
   msg.style.display=menu.style.display=L('lobby').style.display='none';
   L('pause').style.display=net.code?'none':''; // no pausing in a room: it would freeze the host's AI for everyone
   upd();
 }
-function newRound(){if(!sim())return;begin(pickImp());if(net.code)tx({t:'ev',k:'start'});}
+function newRound(){if(!sim())return;const map=genMap();begin(pickImp(),map);if(net.code)tx({t:'ev',k:'start',map});}
 function toMenu(){
   inGame=over=false;peers.forEach(v=>scene.remove(v.g));peers.clear();
   msg.style.display=L('lobby').style.display='none';menu.style.display='';L('pause').style.display='';
 }
 function gameMsg(m){ // everything that arrives from the server (peers' data is untrusted)
   if(m.t==='ev'){
-    if(m.k==='start')begin(new Set());
+    if(m.k==='start')begin(new Set(),validMap(m.map)?m.map:BASE);
     else if(!inGame)return;
     else if(m.k==='npc'&&Array.isArray(m.d)){
       for(const a of m.d){
@@ -456,6 +496,7 @@ function loop(now){
   }
   const k=Math.min(1,dt*12);
   peers.forEach(v=>{v.g.position.x+=(v.x-v.g.position.x)*k;v.g.position.z+=(v.z-v.g.position.z)*k;v.g.rotation.y=v.yaw+Math.PI;});
+  drawMini();
   renderer.render(scene,cam);
   requestAnimationFrame(loop);
 }
